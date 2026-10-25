@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: DropStock serverless API (API Gateway HTTP API, Lambda, DynamoDB)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 256
+    CodeUri: backend/
+    Environment:
+      Variables:
+        PRODUCTS_TABLE: !Ref ProductsTable
+        RESERVATIONS_TABLE: !Ref ReservationsTable
+
+Resources:
+  ProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  ReservationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  ListProductsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.handlers.list_products
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /products
+            Method: GET
+
+  CreateProductFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.handlers.create_product
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /products
+            Method: POST
+
+  GetProductFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.handlers.get_product
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /products/{id}
+            Method: GET
+
+  ReserveFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.handlers.reserve
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ReservationsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /products/{id}/reserve
+            Method: POST
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the API
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
