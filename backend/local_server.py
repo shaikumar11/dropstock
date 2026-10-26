@@ -1,6 +1,6 @@
 """Run the Lambda handlers locally over HTTP with an in-memory DynamoDB.
 
-No AWS account needed:  python local_server.py   (serves on :8000)
+No AWS account needed:  python local_server.py   (serves on :8000, or on $PORT when set)
 """
 import json
 import os
@@ -22,12 +22,25 @@ ROUTES = [
     ("POST", re.compile(r"^/products/(?P<id>[^/]+)/reserve$"), handlers.reserve),
 ]
 
+INFO = {
+    "service": "DropStock API",
+    "status": "ok",
+    "endpoints": [
+        "GET /products",
+        "POST /products",
+        "GET /products/{id}",
+        "POST /products/{id}/reserve",
+    ],
+}
+
 
 class Handler(BaseHTTPRequestHandler):
     def _dispatch(self, method):
         path = self.path.split("?")[0]
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length).decode() if length else None
+        if method == "GET" and path in ("/", "/health"):
+            return self._send(200, json.dumps(INFO), handlers.HEADERS)
         for route_method, pattern, fn in ROUTES:
             match = pattern.match(path)
             if route_method == method and match:
@@ -41,11 +54,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, json.dumps({"error": "Not found"}), handlers.HEADERS)
 
     def _send(self, status, body, headers):
+        data = body.encode()
         self.send_response(status)
         for key, value in headers.items():
             self.send_header(key, value)
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(body.encode())
+        self.wfile.write(data)
 
     def do_GET(self):
         self._dispatch("GET")
@@ -68,8 +83,9 @@ def seed():
 
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
     with mock_aws():
         infra.create_tables()
         seed()
-        print("DropStock API on http://localhost:8000")
-        ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+        print(f"DropStock API listening on 0.0.0.0:{port}")
+        ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
